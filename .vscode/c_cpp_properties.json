@@ -1,0 +1,21 @@
+{
+    "configurations": [
+        {
+            "name": "esp-idf",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "E:/.espressif/tools/xtensa-esp32-elf/esp-2021r2-patch3-8.4.0/xtensa-esp32-elf/xtensa-esp32-elf/include/**",
+                "E:/esp-idf/components/**",
+                "${workspaceFolder}/main/LovyanGFX/**"
+            ],
+            "defines": [],
+            "windowsSdkVersion": "10.0.17134.0",
+            "compilerPath": "E:\\.espressif\\tools\\xtensa-esp32-elf\\esp-2021r2-patch3-8.4.0\\xtensa-esp32-elf\\bin\\xtensa-esp32-elf-gcc.exe",
+            "cStandard": "c11",
+            "cppStandard": "c++11",
+            "intelliSenseMode": "${default}",
+            "configurationProvider": "ms-vscode.cmake-tools"
+        }
+    ],
+    "version": 4
+}
