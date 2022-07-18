@@ -3,10 +3,11 @@
 		"*.tcc": "cpp",
 		"*.ipp": "cpp",
 		"queue": "cpp",
-		"vector": "cpp"
+		"vector": "cpp",
+		"cmath": "cpp"
 	},
 	"idf.adapterTargetName": "esp32",
-	"idf.portWin": "COM7",
-	"idf.flashBaudRate":"115200",
+	"idf.portWin": "COM8",
+	"idf.flashBaudRate":"921600",
 	"idf.flashType": "UART"
 }

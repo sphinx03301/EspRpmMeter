@@ -89,8 +89,11 @@ class LGFX : public lgfx::LGFX_SPI<lgfx::LGFX_Config>
 //  lgfx::Panel_ILI9486 panel;
 //  lgfx::Panel_ILI9488 panel;
 //  lgfx::Panel_SSD1351 panel;
-//  lgfx::Panel_ST7789 panel;
+#if MY_LCD == LCD_0P96INCH
   lgfx::Panel_ST7735S panel;
+#elif MY_LCD == LCD_1P30INCH
+  lgfx::Panel_ST7789 panel;
+#endif
 
 public:
   LGFX(void) : lgfx::LGFX_SPI<lgfx::LGFX_Config>()
@@ -113,7 +116,7 @@ public:
     panel.freq_read  = 16000000;
 
 // SPI通信モードを0~3から設定します。
-    panel.spi_mode = 0;
+    panel.spi_mode = _CONFIG_SPIMODE;
 
 // データ読み取り時のSPI通信モードを0~3から設定します。
     panel.spi_mode_read = 0;
@@ -157,7 +160,7 @@ public:
 
 // invertDisplayの初期値を設定します。trueを設定すると反転します。
 // 省略時は false。画面の輝度が反転している場合は設定を変更してください。
-    panel.invert = true;
+    panel.invert = (_CONFIG_INVERSION == 1);
 
 // パネルの色順がを設定します。  RGB=true / BGR=false
 // 省略時はfalse。赤と青が入れ替わっている場合は設定を変更してください。
@@ -166,8 +169,8 @@ public:
 // LCDコントローラのメモリ上のピクセル数（幅と高さ）を設定します。
 // 設定が合っていない場合、setRotationを使用した際の座標がずれます。
 // （例：ST7735は 132x162 / 128x160 / 132x132 の３通りが存在します）
-    panel.memory_width  = 132;
-    panel.memory_height = 162;
+    panel.memory_width  = _CONFIG_FMEM_WIDTH;
+    panel.memory_height = _CONFIG_FMEM_HEIGHT;
 
 // パネルの実際に表示可能なピクセル数（幅と高さ）を設定します。
 // 省略時はパネルクラスのデフォルト値が使用されます。
@@ -176,8 +179,8 @@ public:
 
 // パネルのオフセット量を設定します。
 // 省略時はパネルクラスのデフォルト値が使用されます。
-    panel.offset_x = _CONFIG_OFFSETX;
-    panel.offset_y = _CONFIG_OFFSETY;
+    //panel.offset_x = _CONFIG_OFFSETX;
+    //panel.offset_y = _CONFIG_OFFSETY;
 
 // setRotationの初期化直後の値を設定します。
     panel.rotation = 0;

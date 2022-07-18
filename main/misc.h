@@ -20,24 +20,20 @@ typedef struct GPIOSTS{
  * 
  */
 enum DISPCMD_CMD {
-	CMD_LED_PON = 1,
-	CMD_LED_WIPER = 2,
-	CMD_LED_4TH = 3,
-	CMD_DISP_JAPANESE = 6,
-	CMD_DISP_VALUE = 7,
-	CMD_SLED1,
-	CMD_SLED2 = 9,
+	CMD_LED = 1,
+	CMD_SLED,
 	CMD_DISP_RPM,
 };
 
 class DISPCMD{
 public:	
-	int		cmd;    // 1 ~ 5 LED, 6 Disp Japanese, 7 Disp value
-	int		state;  // LED ON or Not
-	int   	subcmd;
-	char	strings[28];   // String value to display when cmd 6 or 7;
+	int16_t	cmd;    	// @see DISPCMD_CMD
+	int16_t	state;  	// for example, LED ON or OFF
+	int16_t subcmd;
+	int16_t coloridx;	//
+	const char*	strings;   // String value to display when cmd 6 or 7;
 	void set(int c, int s, int sub) { cmd = c;  state = s;  subcmd = sub;   }
-	DISPCMD() { strings[0] = 0; }
+	DISPCMD() { strings = nullptr; }
 };
 typedef DISPCMD *PDISPCMD;
 
@@ -63,6 +59,9 @@ typedef struct  SETTINGD {
 	int 	nrange;		// ニュートラルの幅(mv単位)
 	int		wiperon;	// ワイパーオン時間。1m秒単位(設定は100ミリ秒単位)
 	int		wiperoff;	// ワイパーオフ時間。
+	int     maxrpm;
+	int     startdgree;
+	int     enddgree;
 	uint8_t pwmlevel;	// PWM出力のDUTY。8bit
 	uint8_t centerlo;
 	uint8_t dummy[2];
@@ -158,5 +157,13 @@ protected:
 
 #ifdef __cplusplus
 }
+
+inline void dummyfunc(const char*fmt, ...) {}
+#if DEBUG_MAIN
+#define DEBUG_PRINT(fmt, ...) printf(fmt,  ##__VA_ARGS__)
+#else
+#define DEBUG_PRINT(fmt, ...) dummyfunc(fmt,  ##__VA_ARGS__)
+#endif
+
 #endif
 #endif

@@ -43,6 +43,9 @@ void SETTINGD::SetDefault() {
 	wiperoff = 10000;
 	nrange = 400;
 	pwmlevel = 200;		// 8割程度の出力を初期値とする
+	this->maxrpm = 100;	// 10000 rpm
+	this->startdgree = 225;
+	this->enddgree = -45;
 	client_mac[0] = 0x10;	// macアドレスは作成中の相手先ESP32のものを暫定的に指定する
 	client_mac[1] = 0x52;
 	client_mac[2] = 0x1c;
