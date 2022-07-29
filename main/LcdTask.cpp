@@ -129,7 +129,7 @@ void LcdTask::DrawMeterNeedle(int rpm, int prev, int cx, int cy, int r) {
 	float newfa3 = oldfangle - _PI_ / 2;
 
 	int needle_len = r * 2 / 3;
-	int lenbttom = r / 12;
+	int lenbttom = r / 10;
 
 	int  x = cos(oldfangle) * needle_len + cx;
 	int  y = sin(oldfangle) * needle_len + cy;
@@ -138,8 +138,10 @@ void LcdTask::DrawMeterNeedle(int rpm, int prev, int cx, int cy, int r) {
 	int  x3 = cos(oldfa3) * lenbttom + cx;
 	int  y3 = sin(oldfa3) * lenbttom + cy;
 
+	_plcd->startWrite();
 	_plcd->fillTriangle(x, y, x2, y2, x3, y3, TFT_WHITE);
 
+	lenbttom = r / 12;
 	x = cos(newfangle) * needle_len + cx;
 	y = sin(newfangle) * needle_len + cy;
 	x2 = cos(newfa2) * lenbttom + cx;
@@ -148,6 +150,7 @@ void LcdTask::DrawMeterNeedle(int rpm, int prev, int cx, int cy, int r) {
 	y3 = sin(newfa3) * lenbttom + cy;
 
 	_plcd->fillTriangle(x, y, x2, y2, x3, y3, TFT_BLUE);
+	_plcd->endWrite();
 }
 
 //!--------------------------------------------------------------------------//
@@ -195,7 +198,7 @@ void LcdTask::DoTask() {
 	DEBUG_PRINT("first draw was done\n");	
 	while (1) {
 		DISPCMD  evt;
-		if(xQueueReceive(dispQue, &evt, pdMS_TO_TICKS(1000))) {
+		if(xQueueReceive(dispQue, &evt, pdMS_TO_TICKS(200))) {
 //			DEBUG_PRINT("LCD TASK called evt.cmd=%d, subcmd=%d\n", evt.cmd, evt.subcmd);
 			switch(evt.cmd) {
 				case 	CMD_LED: {
@@ -206,10 +209,10 @@ void LcdTask::DoTask() {
 					rpm = evt.state;
 					if(rpm != prevrpm) {
 						DrawMeterNeedle(rpm, prevrpm, cx, cy, r);
-						sprintf(szValue, "% 5d", rpm);
+						sprintf(szValue, "% 6d", rpm);
 						_plcd->setFont(&FONT24);
-						_plcd->setTextColor(TFT_BLACK, TFT_WHITE);
-						_plcd->setCursor(cx - 25, height - 40);
+						_plcd->setTextColor(TFT_WHITE, TFT_BLACK);
+						_plcd->setCursor(cx - 40, height - 60);
 						_plcd->print(szValue);
 						tick1s = 0;
 						prevrpm = rpm;
@@ -219,17 +222,19 @@ void LcdTask::DoTask() {
 			}
 		} else {
 			tick1s++;
-			if(rpm > 0 && tick1s > 10)
-				rpm = 0;
-			if(rpm != prevrpm)
+			if(rpm != 0) {
+				rpm -= 100;
+				if(rpm < 0)
+					rpm = 0;
+			}
+			if(rpm != prevrpm) {
 				DrawMeterNeedle(rpm, prevrpm, cx, cy, r);
-				/*
-			sprintf(szValue, "% 5d", tick1s);
-			_plcd->setFont(&FONT24);
-			_plcd->setTextColor(TFT_BLACK, TFT_WHITE);
-			_plcd->setCursor(cx - 25, height - 40);
-			_plcd->print(szValue);
-			*/
+				sprintf(szValue, "% 6d", rpm);
+				_plcd->setFont(&FONT24);
+				_plcd->setTextColor(TFT_WHITE, TFT_BLACK);
+				_plcd->setCursor(cx - 40, height - 60);
+				_plcd->print(szValue);
+			}
 			prevrpm = rpm;
 		}
 	}

@@ -4,7 +4,9 @@
 		"*.ipp": "cpp",
 		"queue": "cpp",
 		"vector": "cpp",
-		"cmath": "cpp"
+		"cmath": "cpp",
+		"esp_timer.h": "c",
+		"chrono": "cpp"
 	},
 	"idf.adapterTargetName": "esp32",
 	"idf.portWin": "COM8",

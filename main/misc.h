@@ -60,13 +60,11 @@ typedef struct  SETTINGD {
 	int		wiperon;	// ワイパーオン時間。1m秒単位(設定は100ミリ秒単位)
 	int		wiperoff;	// ワイパーオフ時間。
 	int     maxrpm;
-	int     startdgree;
-	int     enddgree;
+	int     sangle;
+	int     eangle;
 	uint8_t pwmlevel;	// PWM出力のDUTY。8bit
 	uint8_t centerlo;
 	uint8_t dummy[2];
-	uint8_t client_mac[6];	// 通信相手のMACアドレス
-	uint8_t dummy2[2];
 #ifdef __cplusplus
 	SETTINGD() = default;
 	SETTINGD(const SETTINGD& src) = default;
@@ -95,6 +93,7 @@ typedef struct  SETTINGD {
 
 /**
  * 	現在の動作モードを示す定数
+ * Constants represents current mode
  * */
 enum FUNCMODE {
 	NONE = 0,
@@ -117,16 +116,28 @@ enum CMDMODE {
 	CMD_SUBDUTY = 8			// PWM出力のDUTY指定。8ビットresolution
 };
 
-class GPIODATA {
-public:
-	void (*pcallback)(GPIODATA*) ;
+/**
+ * @brief   IOPortSettingData
+ * Data structure for handling IO Ports
+ */
+typedef struct GPIODATA {
+	// for relating data, or this for C++
+	// 関連データを保持するための変数
+	void *pData;
+	void *pData2;		// ex 	
+	// to keep address of callback function after interrupt was called
+	// 割り込み処理から呼び出す関数のアドレス	
+	void (*pcallback)(GPIODATA*);
 	gpio_num_t	gpionum;
+	// to specify witch intrrupt type
+	// 割込みのエッジを指定する。再開するときに使う
 	gpio_int_type_t	inttypes[2];
 	uint8_t	idxCur;
 	static QueueHandle_t  evtQue;
-	void setValues(gpio_num_t, gpio_int_type_t, gpio_int_type_t, uint8_t);
+	void setValues(void* param, void (*pcfunc)(GPIODATA*), gpio_num_t, gpio_int_type_t, gpio_int_type_t, uint8_t);
 	GPIODATA() { pcallback = nullptr; }
-};
+	GPIODATA(void* param, void (*pcfunc)(GPIODATA*), gpio_num_t, gpio_int_type_t it1 = GPIO_INTR_NEGEDGE, gpio_int_type_t it2 = GPIO_INTR_NEGEDGE, uint8_t idx = 0);
+} GPIODATA;
 
 enum ERECT {
 	ER_LEFT = 1,

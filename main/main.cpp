@@ -17,6 +17,7 @@
 #include <nvs_flash.h>
 #include "driver/adc.h"
 #include "driver/ledc.h"
+#include "esp_timer.h"
 #include "LcdTask.h"
 #include "main.h" 
 
@@ -46,25 +47,17 @@ static void SPIFFS_Directory(const char * path) {
 void IRAM_ATTR gpio_XX_isr(void *arg) {
 
 	GPIODATA	*pgpio = (GPIODATA*)arg;
+//	gpio_intr_disable(pgpio->gpionum);
 	if(pgpio->pcallback != nullptr) {
 		pgpio->pcallback(pgpio);
 		return;
 	}
 	int state = gpio_get_level(pgpio->gpionum) ? 0 : 1;
-    gpio_set_intr_type(pgpio->gpionum, GPIO_INTR_DISABLE);
 	GPIOSTS evt;
 	evt.gpio = pgpio->gpionum;
 	evt.state = state;
 	pgpio->idxCur = ((state + 1) & 1);
     xQueueSendFromISR(pgpio->evtQue, &evt, NULL);
-}
-
-void GPIODATA::setValues(gpio_num_t num, gpio_int_type_t type1, gpio_int_type_t type2, uint8_t idx)
-{
-	this->gpionum = num;
-	this->idxCur = idx;
-	this->inttypes[0] = type1;
-	this->inttypes[1] = type2;
 }
 
 //!----------------------------------------------------------
@@ -82,8 +75,6 @@ EspRpmMeter::EspRpmMeter() {
 	_st2_request = 0;
 	_is_intest = false;
 }
-
-
 
 void EspRpmMeter::SaveSettingTask(void *pvParameters) {
 	((EspRpmMeter *)pvParameters)->SaveSettingTask();
@@ -186,6 +177,8 @@ void EspRpmMeter::MainTask() {
 	#define RESET_TIME	3
 	uint8_t  cplus = 0;				// クランクパルスのカウンタ。1回転で複数回あるのを考慮して使う。ACなら0or1 DCなら0～回数
 	uint8_t  sw_test = 0;			// 
+	uint8_t  sw_main = 0, sw_1 = 0, sw_2 = 0;			// 
+	bool 	sw_mainOn = false;
 	int		 irpm = 0;
 	DEBUG_PRINT("first main was done\n");	
 	char	szText[32];
@@ -202,17 +195,17 @@ void EspRpmMeter::MainTask() {
 				 case _PIN_SW2_: 
 				 	sw2 = evt.state;
 					 break;
+				 case _PIN_DCPULS: 
 				 case _PIN_ACPULS: {
 					//  現在何回転？
 					// rpm＝1分当たりの回転数 = 60*1秒当たりの回転数
-					// 1秒当たりの回転数 = 1秒間のカウント/パルス間のカウント
-					int rpm = 60 * configTICK_RATE_HZ / _tickCnt4Plus;	
+					// 1秒当たりの回転数 = 1秒間のカウント/パルス間のカウン
+					int base = evt.state < 1 ? 1 : evt.state;
+					printf("base=%d\n", base);
+					int rpm = 1000000 / base * 60;		// esp_timerの値はus単位
 					cplus =(cplus + 1) & 1;
 					((LcdTask*)this->_pLcdTask)->ShowRpmValue(rpm);
-				    gpio_set_intr_type(_PIN_ACPULS, GPIO_INTR_NEGEDGE);		// Negative Edgeで割込み許可
 				 }
-				 	break;
-				 case _PIN_DCPULS:
 				 	break;
 			 }
 		} 
@@ -231,12 +224,24 @@ void EspRpmMeter::MainTask() {
 					}
 				}
 			}
+			sw_main = gpio_get_level(_PIN_MAINSW);
+			if(sw_main == 0 && !sw_mainOn) {
+				// trigger push
+				DEBUG_PRINT("GPIO0 ON\n");	
+				sw_mainOn = true;
+			} else if(sw_main == 1 && sw_mainOn) {
+				// trigger click
+				sw_mainOn = false;
+				DEBUG_PRINT("GPIO0 OFF\n");	
+                                             			}
 
 			if(mainsw) {
 			} else if( sw3) {
 			} else { // メインスイッチOFFロジック
 			} // end if (mainsw)
 
+			// アイドルということは回転信号がきていない。この場合、最後のシグナル間隔を補正する
+			_lastPeriod = 200000 / _ACPCNT;		// 300回転程度だったことにする
 			
 		}
 
@@ -248,54 +253,102 @@ void EspRpmMeter::MainTask() {
  * クランクパルスの割込み処理本体
 */
 void  EspRpmMeter::PulseCallbackImpl(GPIODATA* pgpio) {
+	static int clunkplus = 0;
+	GPIOSTS evt;
+	// removing noise. calc perid between previous int and current, if it was less than 1/10 of usual, it must be noize;
+	// 割込み間の時間が通常の割込みの1/10以下の時間ならノイズであるとして無視する
+	int64_t ncurrent = esp_timer_get_time(), nprev = _lastIsrTime;
+	_lastIsrTime = ncurrent;
+	if(ncurrent -  nprev < _lastPeriod / 10) {
+		return; 
+	}
 
+	uint32_t period  = ncurrent  - _lastTickCnt4Puls;	// パルス間隔時間
+	uint32_t periodprev = _lastPeriod;
+	_lastTickCnt4Puls = ncurrent;
+	_lastPeriod = period;
 
 	// DC pulse is recent type to get clank position, and it gives several pulses in a rotation
 	if(pgpio->gpionum == _PIN_DCPULS) {
 		// DC pulse don't generate wrong signal, so we don't have to stop intrrupt.
 		// DCパルスの場合不正な割込みはかからないので割込みは停止しない(台形波となっている)
 
-		// need to calc which pulse is for fire, otherwith should return.
+		// judge if now is beginning point of a rotation
+		// ここで前回の間隔と今回間隔から、起点かどうか判定できるはず
+		if(periodprev * 3 / 2 < period) {	
+			// 今回の間隔が、前回の1.5倍以上あれば多分今回が起点のはず
+			pgpio->idxCur = 0;
+		} else {
+			pgpio->idxCur++;
+		}
 
+		// need to calc which pulse is for fire, otherwith should return.
+		if((++clunkplus % _DCPCNT) != 0)
+			return;
 	} else {
 		// Here is for AC pulse, and for old type. it gives AC waves 1 time in a rotation.
 
-		// At first, we should stop interrupt on this pin to deal with reverse side wave of AC
-		// AC波だとジャダーが発生して複数割込みかかるので、しばし割込み停止する。20000rpmでも
-		// 3m秒ごとの割込みなので1ミリ秒ほど停止しても問題ない
-	    gpio_set_intr_type(pgpio->gpionum, GPIO_INTR_DISABLE);
-		int ncurrent = xTaskGetTickCountFromISR();
-		_tickCnt4Plus = ncurrent  - _lastTickCnt4Plus;
-		_lastTickCnt4Plus = ncurrent;
+		// judge if now is beginning point of a rotation
+		if(_ACPCNT > 1) {
 
+		} else {
+			pgpio->idxCur = 0;			// always zero if 1 signal in 1 rotation.
+		}
 
-
+		// determin wether the pulse is noize or not. True pulse is longer duration.
+		// 複数パルスで1回転の場合の判断をする
+		if((++clunkplus % _ACPCNT) != 0)
+			return;
+		// ここまで来たら1回転。
+		evt.state = period;
 	}
 
+
+
 	// finally we should send something to main loop to show information like RPM
-	// 最終的に描画のためにメインループで何かしら処理をするようキューにつめておく
-	GPIOSTS evt;
+	// 最終的にメインループで何かしら処理をするようキューにつめておく(割込み処理でなく、
+	// 一般処理で行う) 
 	evt.gpio = pgpio->gpionum;
-	evt.state = 1;
     xQueueSendFromISR(pgpio->evtQue, &evt, NULL);
+	//if(ncurrent -  nprev  > 100) {
+	//    xQueueSendFromISR(portIsrQue, pgpio, NULL);
+    //	gpio_intr_disable(pgpio->gpionum);
+	//	esp_timer_start_once(_th_IsrWait, 100);
+	//}
 }
 
 
-
-void  EspRpmMeter::PulseCallback(GPIODATA* p) {
-	EspRpmMeter::getInstance()->PulseCallbackImpl(p);
+/**
+ * static function (callback) from ISR port intrrupt
+ * ポート割り込みからのコールバック関数
+ * */
+ void  EspRpmMeter::PulseCallback(GPIODATA* p) {
+	((EspRpmMeter *)p->pData)->PulseCallbackImpl(p);
 }
 
+/**
+ * Timer callback function
+ * Allow intrrupt on the gpio
+ * */
+void EspRpmMeter::vTimerCallback(void* pparam) {
+	EspRpmMeter *pThis = (EspRpmMeter *)pparam;
+	esp_timer_stop(pThis->_th_IsrWait);
+	GPIODATA	gpiodata;
+	xQueueReceive(pThis->portIsrQue, &gpiodata, 99999999);
+    gpio_intr_enable(gpiodata.gpionum);
+}
 /**--------------------------------------------------------------------
  * Setting IO Ports.
  * GPIOの設定。
+ * Don't have to use IRQ for slow switch's like push button, only 
+ * signal need to use IRQ, like clank pulse
+ * スピードが必要ないものは割込みを使わない。クランクパルスなどの信号のみ。
  --------------------------------------------------------------------*/
 void EspRpmMeter::gpio_setting() {
 
     gpio_config_t io_conf;
 
     // 入力ポート設定
- 	//  io_conf.intr_type = GPIO_INTR_LOW_LEVEL;	// Loで割り込み
     io_conf.intr_type = GPIO_INTR_DISABLE;	
     io_conf.pin_bit_mask = (1ULL<<_PIN_MAINSW) | (1ULL<<_PIN_SW1_) | (1ULL<<_PIN_SW2_) | (1ULL<<_PIN_ACPULS) | (1ULL<<_PIN_DCPULS) | (1ULL<<_PIN_TESTSW) ;
 	io_conf.mode = GPIO_MODE_INPUT;
@@ -303,7 +356,6 @@ void EspRpmMeter::gpio_setting() {
     io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
     gpio_config(&io_conf);
 
-    // 出力ポート設定
   // 出力ポート設定
     io_conf.intr_type = GPIO_INTR_DISABLE;		
     io_conf.pin_bit_mask =  (1ULL<<_PIN_DC) |  (1ULL<<_PIN_RESET) |  (1ULL<<_PIN_MOSI)|  (1ULL<<_PIN_SCLK);
@@ -315,22 +367,19 @@ void EspRpmMeter::gpio_setting() {
     //gpio_isr_register(gpio_XX_isr, NULL, ESP_INTR_FLAG_LEVELMASK, &isr_handle);
     gpio_install_isr_service(0);
 	DEBUG_PRINT("gpio_install_isr_service done\n");
-	/*
-	_gpdt_mainsw.setValues(_PIN_MAINSW, GPIO_INTR_POSEDGE, GPIO_INTR_DISABLE, 0);
-	_gpdt_sw1.setValues(_PIN_SW1_, GPIO_INTR_NEGEDGE, GPIO_INTR_POSEDGE, 0);
-	_gpdt_sw2.setValues(_PIN_SW2_, GPIO_INTR_NEGEDGE, GPIO_INTR_POSEDGE, 0);
-	_gpdt_acpulse.setValues(_PIN_ACPULS, GPIO_INTR_NEGEDGE, GPIO_INTR_NEGEDGE, 0);
-	_gpdt_dcpulse.setValues(_PIN_DCPULS, GPIO_INTR_NEGEDGE, GPIO_INTR_NEGEDGE, 0);
-	_gpdt_acpulse.pcallback = &EspRpmMeter::PulseCallback;
-	_gpdt_dcpulse.pcallback = &EspRpmMeter::PulseCallback;
-    gpio_isr_handler_add(_PIN_MAINSW, gpio_XX_isr, &_gpdt_mainsw);
-    gpio_isr_handler_add(_PIN_ACPULS, gpio_XX_isr, &_gpdt_acpulse);
+
+	gpio_isr_handler_add(_PIN_ACPULS, gpio_XX_isr, &_gpdt_acpulse);
     gpio_isr_handler_add(_PIN_DCPULS, gpio_XX_isr, &_gpdt_dcpulse);
-	gpio_set_intr_type(_PIN_MAINSW, GPIO_INTR_POSEDGE);
+	// _gpdt_acpulse.setValues(this,  &EspRpmMeter::PulseCallback,  _PIN_ACPULS, GPIO_INTR_LOW_LEVEL, GPIO_INTR_HIGH_LEVEL, 0);
+	// _gpdt_dcpulse.setValues(this,  &EspRpmMeter::PulseCallback, _PIN_DCPULS, GPIO_INTR_LOW_LEVEL, GPIO_INTR_HIGH_LEVEL, 0);
+	// gpio_set_intr_type(_PIN_ACPULS, GPIO_INTR_LOW_LEVEL);
+	// gpio_set_intr_type(_PIN_DCPULS, GPIO_INTR_LOW_LEVEL);
+	_gpdt_acpulse.setValues(this,  &EspRpmMeter::PulseCallback,  _PIN_ACPULS, GPIO_INTR_NEGEDGE, GPIO_INTR_POSEDGE, 0);
+	_gpdt_dcpulse.setValues(this,  &EspRpmMeter::PulseCallback, _PIN_DCPULS, GPIO_INTR_NEGEDGE, GPIO_INTR_POSEDGE, 0);
 	gpio_set_intr_type(_PIN_ACPULS, GPIO_INTR_NEGEDGE);
 	gpio_set_intr_type(_PIN_DCPULS, GPIO_INTR_NEGEDGE);
-*/
 }
+
 
 
 extern "C" void app_main(void);
@@ -344,14 +393,30 @@ void EspRpmMeter::main() {
 	ESP_LOGI(TAG, "Initializing GPIOS");
 	gpio_setting();
     portRqQue = xQueueCreate(10, sizeof(GPIOSTS));
+	portIsrQue = xQueueCreate(5, sizeof(GPIODATA));
 	ssQue = xQueueCreate(5, sizeof(int));
 	GPIODATA::evtQue = portRqQue;
 
 	// セッティングファイル読み込み
 	loadSettingData();
 
+	// Creating a timer for waiting reset interrupt
+	// 割込みを最有効にするためのタイマ作成(100us単位)
+	_th_IsrWait = NULL;
+
+    const esp_timer_create_args_t oneshot_timer_args = {
+            .callback = &vTimerCallback,
+            /* argument specified here will be passed to timer callback function */
+            .arg = (void*)this,
+            .name = "one-shot"
+    };
+    ESP_ERROR_CHECK(esp_timer_create(&oneshot_timer_args, &_th_IsrWait));
+	_lastTickCnt4Puls = esp_timer_get_time();
+	_lastIsrTime = _lastTickCnt4Puls;
+	_lastPeriod = 0;
+
 	_pLcdTask = new LcdTask(1 + tskIDLE_PRIORITY);
-	((LcdTask *)_pLcdTask)->SetRpmParam(_settingd.maxrpm, _settingd.startdgree, _settingd.enddgree);
+	((LcdTask *)_pLcdTask)->SetRpmParam(_settingd.maxrpm, _settingd.sangle, _settingd.eangle);
 	DEBUG_PRINT("TaskCreat LcdTask \n");
     xTaskCreatePinnedToCore(MainTask, "AdTask", 1024*6, this, tskIDLE_PRIORITY + 2, NULL, 1);
 	DEBUG_PRINT("TaskCreat MainTask \n");

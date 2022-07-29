@@ -43,15 +43,9 @@ void SETTINGD::SetDefault() {
 	wiperoff = 10000;
 	nrange = 400;
 	pwmlevel = 200;		// 8割程度の出力を初期値とする
-	this->maxrpm = 100;	// 10000 rpm
-	this->startdgree = 225;
-	this->enddgree = -45;
-	client_mac[0] = 0x10;	// macアドレスは作成中の相手先ESP32のものを暫定的に指定する
-	client_mac[1] = 0x52;
-	client_mac[2] = 0x1c;
-	client_mac[3] = 0x5d;
-	client_mac[4] = 0x34;
-	client_mac[5] = 0x91;
+	this->maxrpm = _MAX_RPM;	// 10000 rpm
+	this->sangle = _SANGLE;
+	this->eangle = _EANGLE;
 }
 
 void SETTINGD::Initialize() {
@@ -194,6 +188,23 @@ uint8_t  JoystickLogic::GetActionC() {
 	if(state)
 		flag = 0;
 	return state;
+}
+
+#endif
+
+#if (1)
+GPIODATA::GPIODATA(void* param, void (*pcfunc)(GPIODATA*), gpio_num_t gpionum, gpio_int_type_t it1, gpio_int_type_t it2, uint8_t idxinit) {
+	setValues(param, pcfunc, gpionum, it1, it2, idxinit);
+}
+
+void GPIODATA::setValues(void* param, void (*pcfunc)(GPIODATA*), gpio_num_t gpionum, gpio_int_type_t it1, gpio_int_type_t it2, uint8_t idxinit) {
+	this->pData = param;
+	this->pData2 = nullptr;
+	this->pcallback = pcfunc;
+	this->gpionum = gpionum;
+	this->inttypes[0] = it1;
+	this->inttypes[1] = it2;
+	this->idxCur = idxinit;
 }
 
 #endif

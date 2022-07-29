@@ -13,7 +13,7 @@ extern "C" {
 // 	メインクラス
 //------------------------------------------------------
 class EspRpmMeter {
-friend class EspRpmMeter;
+//friend class EspRpmMeter;
 public:
 	EspRpmMeter();
 	void  main();
@@ -29,21 +29,23 @@ protected:
 	uint8_t		_st1_request, 		// 設定モードへの変更要求フラグ
 				_st2_request;
 	uint8_t		_curMode;
-	uint32_t	_initJSVval,		// JoyStick 垂直方向AD変換初期値(mv)
+	volatile uint32_t	_initJSVval,		// JoyStick 垂直方向AD変換初期値(mv)
 				_initJSHval,
-				_tickCnt4Plus,
-				_lastTickCnt4Plus,
-				_tickCntSav;
+				_lastPeriod;
+	int64_t 	_lastTickCnt4Puls,
+				_lastIsrTime;
 	GPIODATA	_gpdt_mainsw;
 	GPIODATA	_gpdt_sw1;
 	GPIODATA	_gpdt_sw2;
 	GPIODATA	_gpdt_acpulse;
 	GPIODATA	_gpdt_dcpulse;
 	QueueHandle_t  portRqQue;
+	QueueHandle_t  portIsrQue;
 	QueueHandle_t  ssQue;
 	void *		_pLcdTask;
 	bool		_is_intest;
 	TaskHandle_t _ht_Test;
+	esp_timer_handle_t _th_IsrWait;
 
 protected:
 	int loadSettingData();
@@ -55,10 +57,12 @@ protected:
 	void pwm_setting();
 	int ConnectToServer();
 	void PulseCallbackImpl(GPIODATA*);
+	void IsrWaitCallback(void *);
 	static void PulseCallback(GPIODATA*);
 	static void SaveSettingTask(void *pvParameters);
 	static void MainTask(void *pvParameters);
 	static void TestTask(void *);
+	static void vTimerCallback( void * );
 };
 
 #ifdef __cplusplus
